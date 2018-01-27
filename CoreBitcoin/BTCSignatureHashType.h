@@ -44,6 +44,9 @@ typedef NS_ENUM(unsigned char, BTCSignatureHashType)
     // Can be used together with any of the above types.
     SIGHASH_ANYONECANPAY = 0x80,
     BTCSignatureHashTypeAnyoneCanPay = SIGHASH_ANYONECANPAY,
+    
+    SIGHASH_FORK_ID          = 0x40,
+    BTCSignatureHashTypeForkId = SIGHASH_FORK_ID,
 };
 
 #endif
