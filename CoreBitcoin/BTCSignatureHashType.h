@@ -47,6 +47,15 @@ typedef NS_ENUM(unsigned char, BTCSignatureHashType)
     
     SIGHASH_FORK_ID          = 0x40,
     BTCSignatureHashTypeForkId = SIGHASH_FORK_ID,
+    
+    SIGHASH_ALL_BCH          = 0x41,
+    BTCSignatureHashTypeAllBCH = SIGHASH_ALL_BCH,
+    
+    SIGHASH_NONE_BCH          = 0x42,
+    BTCSignatureHashTypeNoneBCH = SIGHASH_NONE_BCH,
+
+    SIGHASH_SINGLE_BCH          = 0x43,
+    BTCSignatureHashTypeSingleBCH = SIGHASH_SINGLE_BCH,
 };
 
 #endif
