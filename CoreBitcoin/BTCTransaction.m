@@ -8,6 +8,7 @@
 #import "BTCScript.h"
 #import "BTCErrors.h"
 #import "BTCHashID.h"
+#import "BTCOutpoint.h"
 
 NSData* BTCTransactionHashFromID(NSString* txid) {
     return BTCHashFromID(txid);
@@ -335,7 +336,128 @@ NSString* BTCTransactionIDFromHash(NSData* txhash) {
 
 #pragma mark - Signing a transaction
 
-
+// Hash for signing a BCH transaction
+- (NSData*) signatureHashForScript:(BTCScript *)subscript inputIndex:(uint32_t)inputIndex hashType:(BTCSignatureHashType)hashType amount:(BTCAmount)amount error:(NSError *__autoreleasing *)errorOut {
+    NSMutableData* payload = [NSMutableData data];
+    
+    // TODO: hashTypeによる分岐
+    /*
+     hashPrevouts:
+        If the ANYONECANPAY flag is not set, hashPrevouts is the double SHA256 of the serialization of all input outpoints;
+        Otherwise, hashPrevouts is a uint256 of 0x0000......0000.
+     
+     hashSequence:
+        If none of the ANYONECANPAY, SINGLE, NONE sighash type is set, hashSequence is the double SHA256 of the serialization of nSequence of all inputs;
+        Otherwise, hashSequence is a uint256 of 0x0000......0000.
+     
+     hashOutputs:
+        If the sighash type is neither SINGLE nor NONE, hashOutputs is the double SHA256 of the serialization of all output amount (8-byte little endian) with scriptPubKey (serialized as scripts inside CTxOuts);
+        If sighash type is SINGLE and the input index is smaller than the number of outputs, hashOutputs is the double SHA256 of the output amount with scriptPubKey of the same index as the input;
+        Otherwise, hashOutputs is a uint256 of 0x0000......0000.
+     */
+    // new input and output payload
+    NSMutableData* serializedPrevouts = [NSMutableData data];
+    NSMutableData* serializedSequence = [NSMutableData data];
+    NSMutableData* serializedOutputs = [NSMutableData data];
+    
+    
+    for (BTCTransactionInput* input in _inputs) {
+        // outpoint
+        [serializedPrevouts appendData:input.outpoint.data];
+        
+        // sequence
+        uint32_t seqeunce = input.sequence;
+        [serializedSequence appendBytes:&seqeunce length:4];
+    }
+    
+    for (BTCTransactionOutput* output in _outputs) {
+        [serializedOutputs appendData:output.data];
+    }
+    printf("\n----------------------\n");
+    printf("TX create sighash\n");
+    printf("prevouts : %s\n", [BTCHexFromData(serializedPrevouts) UTF8String]);
+    printf("sequence : %s\n", [BTCHexFromData(serializedSequence) UTF8String]);
+    printf("outputs  : %s\n", [BTCHexFromData(serializedOutputs) UTF8String]);
+    NSData* hashPrevouts = BTCHash256(serializedPrevouts);
+    NSData* hashSequence = BTCHash256(serializedSequence);
+    NSData* hashOutputs = BTCHash256(serializedOutputs);
+    
+    // 4-byte version
+    uint32_t ver = _version;
+    [payload appendBytes:&ver length:4];
+    printf("version  : %s\n", [BTCHexFromData(payload) UTF8String]);
+    
+    // Input prevouts/nSequence (none/all, depending on flags)
+    [payload appendData:hashPrevouts];
+    printf("hashPrevouts : %s\n", [BTCHexFromData(hashPrevouts) UTF8String]);
+    [payload appendData:hashSequence];
+    printf("hashSequence : %s\n", [BTCHexFromData(hashSequence) UTF8String]);
+    
+    // The input being signed (replacing the scriptSig with scriptCode + amount)
+    // The prevout may already be contained in hashPrevout, and the nSequence
+    // may already be contain in hashSequence.
+    
+    BTCTransactionInput* input = _inputs[inputIndex];
+    
+    // input outpoint
+    [payload appendData:input.outpoint.data];
+    printf("outpoint : %s\n", [BTCHexFromData(input.outpoint.data) UTF8String]);
+    
+    // input scriptCode
+    NSMutableData* scriptCode = [NSMutableData data];
+    [scriptCode appendData:[BTCProtocolSerialization dataForVarInt:subscript.data.length]];
+    [scriptCode appendData:subscript.data];
+    [payload appendData:scriptCode];
+    printf("scriptCode : %s\n", [BTCHexFromData(scriptCode) UTF8String]);
+    
+    // input amount
+    NSData* amountData = [NSData dataWithBytes:&amount length:8];
+    [payload appendBytes:&amount length:8];
+    printf("amount : %s\n", [BTCHexFromData(amountData) UTF8String]);
+    
+    // input sequence
+    uint32_t sequence = input.sequence;
+    NSData* sequenceData = [NSData dataWithBytes:&sequence length:4];
+    [payload appendBytes:&sequence length:4];
+    printf("sequence : %s\n", [BTCHexFromData(sequenceData) UTF8String]);
+    
+    // Outputs (none/one/all, depending on flags)
+    printf("hashOutputs : %s\n", [BTCHexFromData(hashOutputs) UTF8String]);
+    [payload appendData:hashOutputs];
+    
+    // 4-byte lock_time
+    uint32_t lt = _lockTime;
+    [payload appendBytes:&lt length:4];
+    printf("lockTime : %s\n", [BTCHexFromData([NSData dataWithBytes:&lt length:4]) UTF8String]);
+    
+    // hashType : FORK_ID(0x40) + HASH_TYPE(0x01など)
+    uint32_t hashType32 = OSSwapHostToLittleInt32((uint32_t)hashType);
+    [payload appendBytes:&hashType32 length:sizeof(hashType32)];
+    printf("hashType : %s\n", [BTCHexFromData([NSData dataWithBytes:&hashType32 length:sizeof(hashType32)]) UTF8String]);
+    
+    // ここまでで[unsigned raw tx]の完成
+    // SHA256^2でハッシュ化 : [unsigned raw tx] -> [sighash]
+    NSData* hash = BTCHash256(payload);
+    printf("unsigned raw tx : %s\n", [BTCHexFromData(payload) UTF8String]);
+    printf("hash : %s\n", [BTCHexFromData(hash) UTF8String]);
+    printf("----------------------\n\n");
+    return hash;
+    
+    /* unsigned raw tx
+     // 0100000001a3754615690688b4d6324b3badd737600842f8b034fb1f6774437502bde8d84c0000000000ffffffff0230750000000000001976a9140f77d2cdb04c22d6013c035016b5e8477dc0be4888ac2b440400000000001976a9143f976bfe6a69093c8ab791e5f6f6e7926cb3787988ac00000000
+     // 01000000 : version byte
+     // 01 : num of input tx
+     // a3754615690688b4d6324b3badd737600842f8b034fb1f6774437502bde8d84c : input tx hash
+     // 0000000000 : input tx index
+     // ffffffff : sequence
+     // 02 : num of output tx
+     // 3075000000000000 : amount
+     // 1976a9140f77d2cdb04c22d6013c035016b5e8477dc0be4888ac : lock script(OP_DUP HASH160 pubkeyHash EQUAL_VERIFY CHECK_SIG)
+     // 2b44040000000000 : amount
+     // 1976a9143f976bfe6a69093c8ab791e5f6f6e7926cb3787988ac : lock script(OP_DUP HASH160 pubkeyHash EQUAL_VERIFY CHECK_SIG)
+     // 00000000 : lock time
+     */
+}
 
 // Hash for signing a transaction.
 // You should supply the output script of the previous transaction, desired hash type and input index in this transaction.
