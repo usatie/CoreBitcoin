@@ -33,6 +33,12 @@
     return words[0] + self.index;
 }
 
+- (NSData*) data {
+    NSMutableData* payload = [NSMutableData dataWithData:self.txHash];
+    [payload appendBytes:&_index length:4];
+    return payload;
+}
+
 - (BOOL) isEqual:(BTCOutpoint*)object {
     return [self.txHash isEqual:object.txHash] && self.index == object.index;
 }

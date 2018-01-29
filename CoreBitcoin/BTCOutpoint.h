@@ -15,6 +15,9 @@
 // Index of the previous transaction's output.
 @property(nonatomic) uint32_t index;
 
+// tx_id_hash + index
+@property(nonatomic) NSData* data;
+
 - (id) initWithHash:(NSData*)hash index:(uint32_t)index;
 
 - (id) initWithTxID:(NSString*)txid index:(uint32_t)index;
